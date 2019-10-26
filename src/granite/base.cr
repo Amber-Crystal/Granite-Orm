@@ -40,19 +40,16 @@ abstract class Granite::Base
   extend Select
 
   macro inherited
-    include JSON::Serializable
-    include YAML::Serializable
-
     @@select = Container.new(table_name: table_name, fields: fields)
 
-    # Returns true if this object hasn't been saved yet.
     @[JSON::Field(ignore: true)]
     @[YAML::Field(ignore: true)]
+    # Returns true if this object hasn't been saved yet.
     disable_granite_docs? property? new_record : Bool = true
 
-    # Returns true if this object has been destroyed.
     @[JSON::Field(ignore: true)]
     @[YAML::Field(ignore: true)]
+    # Returns true if this object has been destroyed.
     disable_granite_docs? getter? destroyed : Bool = false
 
     # Returns true if the record is persisted.
@@ -60,15 +57,22 @@ abstract class Granite::Base
       !(new_record? || destroyed?)
     end
 
-    disable_granite_docs? def initialize(**args : Granite::Columns::Type)
-      set_attributes(args.to_h.transform_keys(&.to_s))
+    # Consumes the result set to set self's property values.
+    disable_granite_docs? def initialize(result : DB::ResultSet) : Nil
+      {% verbatim do %}
+        {% begin %}
+          result.column_names.each do |col|
+            case col
+            {% for column in @type.instance_vars.select { |ivar| ivar.annotation(Granite::Column) } %}
+              {% ann = column.annotation(Granite::Column) %}
+              when {{column.name.stringify}} then @{{column.id}} = {% if ann[:converter] %} {{ann[:converter]}}.from_rs result {% else %} Granite::Type.from_rs(result, {{column.type}}) {% end %}
+            {% end %}
+            end
+          end
+        {% end %}
+      {% end %}
     end
 
-    disable_granite_docs? def initialize(args : Granite::ModelArgs)
-      set_attributes(args.transform_keys(&.to_s))
-    end
-
-    disable_granite_docs? def initialize
-    end
+    def initialize; end
   end
 end
